@@ -1,12 +1,11 @@
 package cryptography
 
-import java.awt.Color
 import java.awt.image.BufferedImage
 import java.io.File
 import java.io.FileNotFoundException
 import javax.imageio.ImageIO
 import java.lang.Exception
-import java.security.MessageDigest
+import kotlin.experimental.xor
 
 const val BITS_IN_BYTE = 8
 
@@ -24,9 +23,18 @@ fun getBit(n: Int, pos: Int): Int {
     return (n shr (BITS_IN_BYTE - 1 - pos)) and 1
 }
 
-fun hideMessageInImage(message: String, image: BufferedImage) {
+fun encryptDecrypt(messageBytes: ByteArray, passwordBytes: ByteArray): ByteArray {
+    val messageSize = messageBytes.size
+    val passwordSize = passwordBytes.size
+    val result = messageBytes.copyOf()
+    for (i in 0 until messageSize) {
+        result[i] = result[i] xor passwordBytes[i % passwordSize]
+    }
+    return result
+}
 
-    val bytes = message.encodeToByteArray() + byteArrayOf(0, 0, 3)
+fun hideMessageInImage(message: String, password: String, image: BufferedImage) {
+    val bytes = encryptDecrypt(message.encodeToByteArray(), password.encodeToByteArray()) + byteArrayOf(0, 0, 3)
     val nBits = BITS_IN_BYTE * bytes.size
     if (nBits > image.width * image.height) {
         throw Exception("The input image is not large enough to hold this message.")
@@ -45,21 +53,22 @@ fun hideMessageInImage(message: String, image: BufferedImage) {
     }
 }
 
-fun readMessageFromImage(image: BufferedImage): String {
-    val endPattern = listOf("00000000".toUByte(2), "00000000".toUByte(2), "00000011".toUByte(2))
+fun readMessageFromImage(password: String, image: BufferedImage): String {
+    val endPattern = listOf("00000000".toByte(2), "00000000".toByte(2), "00000011".toByte(2))
     var bits = ""
-    var messageList = ubyteArrayOf()
+    var messageList = byteArrayOf()
 
     for (y in 0 until image.height) {
         for (x in 0 until image.width) {
             if (bits.length == BITS_IN_BYTE) {
-                messageList += bits.toUByte(2)
+                messageList += bits.toByte(2)
                 bits = ""
                 if (messageList.size >= 3) {
                     val index = messageList.lastIndex
                     val lastThreeBytes = listOf(messageList[index - 2], messageList[index - 1], messageList[index])
                     if (lastThreeBytes == endPattern) {
-                            val message = messageList.dropLast(3).toUByteArray().toByteArray()
+                            val message = encryptDecrypt(messageList.dropLast(3).toByteArray(),
+                                password.encodeToByteArray())
                             return message.toString(Charsets.UTF_8)}
                 }
             }
@@ -67,7 +76,7 @@ fun readMessageFromImage(image: BufferedImage): String {
             bits += (color and 1).toString()
         }
     }
-    val message = messageList.dropLast(3).toUByteArray().toByteArray()
+    val message = encryptDecrypt(messageList.dropLast(3).toByteArray(), password.encodeToByteArray())
     return message.toString(Charsets.UTF_8)
 
 }
@@ -79,11 +88,13 @@ fun hide() {
     val outputName = readln()
     println("Message to hide:")
     val message = readln()
+    println("Password:")
+    val password = readln()
     val inputFile = File(inputName)
     try {
         val image: BufferedImage = ImageIO.read(inputFile)
         // modifyImage(image)
-        hideMessageInImage(message, image)
+        hideMessageInImage(message, password, image)
         val outputFile = File(outputName)
         ImageIO.write(image, "png", outputFile)
         println("Message saved in $outputName image.")
@@ -97,10 +108,12 @@ fun hide() {
 fun show() {
     println("Input image file:")
     val inputName = readln()
+    println("Password:")
+    val password = readln()
     val inputFile = File(inputName)
     try {
         val image: BufferedImage = ImageIO.read(inputFile)
-        val message = readMessageFromImage(image)
+        val message = readMessageFromImage(password, image)
         println("Message:")
         println(message)
 
